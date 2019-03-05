@@ -13,6 +13,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <signal.h>
+
 #if 0
 #include "zlib/zlib.h"
 #endif
@@ -30,7 +31,7 @@
 typedef struct __attribute__((__packed__)) WorkerParametes_t {
 	int w_socket;
 	unsigned char w_compressionType;
-	long fsize;
+	unsigned int fsize;
 } WorkerParameters;
 
 typedef struct __attribute__((__packed__)) ClientThreadsParametes_t {
@@ -38,30 +39,26 @@ typedef struct __attribute__((__packed__)) ClientThreadsParametes_t {
 	int c_wr_pipe;
 	int c_rd_pipe;
 	unsigned char c_compressionType;
-	long c_fsize;
+	unsigned int c_fsize;
 	//char *c_flink;
 	FILE * c_flink;
 	const char *c_filename;
 } ClientThreadsParametes;
 
-
-
 struct __attribute__((__packed__)) conf_t {
 	const char *host;	/*-H. server address*/
 	FILE * outFile;		/*-I. Input file for server*/
 	unsigned char arch_type;		/*-T */
-	long input_fsize;
+	unsigned int input_fsize;
 	const char *input_filename;
 } conf;
 
 typedef struct __attribute__((__packed__)) MagicToken_t {
 	int start_key;
 	unsigned char compressionType;
-	long nextdatasizes;
+	unsigned int nextdatasizes;
 	int end_key;
 } MagicToken;
-
-
 
 volatile sig_atomic_t clnt_incomingSignal = 0;
 void clnt_incomingSignal_parse(int signum)

@@ -3,8 +3,8 @@
 void *recv_client(void *params)
 {
 	ClientThreadsParametes *cp = (ClientThreadsParametes*) params;
-		long out_data = 0;;
-	long idx=0;
+	unsigned int out_data = 0;;
+	unsigned int idx=0;
 	const char *extension;
 	switch(cp->c_compressionType)
 	{
@@ -40,7 +40,7 @@ void *recv_client(void *params)
 	char recv_buffer[BUFFER_SIZE] = {0};
 	char send_buffer[BUFFER_SIZE] = {0};
 	int recv_retval,send_retv, poll_retval;
-	long data_size = 0;
+	unsigned int data_size = 0;
 
 	
 	while(1)
@@ -104,7 +104,7 @@ void *recv_client(void *params)
 						if (send_retv <= 0) 
 						{
 							if (attempts++ < 100 )
-							{	printf("recv_client: send retry[%ld] erno %d\n", out_data, errno);
+							{	printf("recv_client: send retry[%d] erno %d\n", out_data, errno);
 								if ((errno == EAGAIN)) attempts = 0;
 								else break;
 							}
@@ -134,7 +134,7 @@ void *recv_client(void *params)
 int main(int argc, char *argv[])
 {
 	int opt = 0;
-	long lSize = 0;
+	unsigned int lSize = 0;
     char * send_buffer = NULL;
 	char * recv_buffer = NULL;
 	/* char * file_buffer = NULL; */
@@ -207,7 +207,7 @@ int main(int argc, char *argv[])
 	mToken->end_key = MAGIC_END_KEY;
 
 	
-	printf("\n%X %X %ld %X\n",
+	printf("\n%X %X %d %X\n",
 			mToken->start_key,
 			mToken->compressionType,
 			mToken->nextdatasizes,
