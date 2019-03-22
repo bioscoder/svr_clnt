@@ -36,6 +36,7 @@ int main()
 	sig_atomic_t srv_incomingSignal = 0;
 	
 	signal(SIGTERM, srv_incomingSignal_parse);
+	signal(SIGINT, srv_incomingSignal_parse);
 
 	
 	listener = socket(AF_INET, SOCK_STREAM, 0);
@@ -70,7 +71,6 @@ int main()
 	while (!srv_incomingSignal)
 	{
 		read_set_fd = main_set_fd;
-		//TODO: use pselect
 		if (select(max_seen_socket+1, &read_set_fd, NULL, NULL, NULL) == -1)
 		{
 			perror("select");
@@ -112,7 +112,6 @@ int main()
 								if (i == cIdx) //no empty slots
 									cIdx++;
 							} 
-							//cIdx++;
 							cOnline[cIdx].c_socket = new_socket;
 							cOnline[cIdx].inUse = 0;
 							cOnline[cIdx].c_addr = &clientaddr;
@@ -139,7 +138,7 @@ int main()
 					if ((retv_recv = recv(current_socket, incoming_data, BUFFER_SIZE, 0)) <= 0)
 					{
 						if (retv_recv == 0)
-							printf("selectserver: socket %d", current_socket);
+							printf("selectserver: ret socket %d", current_socket);
 						else
 							perror("recv@current_socket:");
 
@@ -156,10 +155,11 @@ int main()
 						if (!cOnline[i].inUse)
 						{
 							cOnline[i].inUse = 1;
-							cOnline[i].c_targetSize = getFilesizeFromHeader(incoming_data);
-							cOnline[i].c_compressionType = getCompressionFromHeader(incoming_data);
-							printf("client %d[%d]: target: %d\n",
-														i, cOnline[i].c_socket, cOnline[i].c_targetSize);
+								cOnline[i].c_targetSize = getFilesizeFromHeader(incoming_data);
+								cOnline[i].c_compressionType = getCompressionFromHeader(incoming_data);
+								printf("client %d[%d]: target: %d, compr:%d\n",
+										i, cOnline[i].c_socket, cOnline[i].c_targetSize, cOnline[i].c_compressionType);
+
 						}
 
 						processAndSend(current_socket, incoming_data, retv_recv, &cOnline[i]);
@@ -173,9 +173,9 @@ int main()
 						}
 					}
 				}
-			} //if (FD_ISSET(current_socket, &read_set_fd))
-		} //for(int current_socket = 0; current_socket <= max_seen_socket; current_socket++)
-	} //for(;;)
+			}
+		}
+	}
 	close(listener);
 	return 0;
-}//end of file.
+}

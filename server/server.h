@@ -1,7 +1,10 @@
 #ifndef _SERVER_H_
 #define _SERVER_H_
 
-#define MAX_ONLINE_CLIENTS 128
+#define MAX_ONLINE_CLIENTS	10
+#define ZLIB_DEFLATE_LEVEL	6
+
+#include "zlib/zlib.h"
 
 typedef struct ClientsOnline_t
 {
@@ -13,6 +16,7 @@ typedef struct ClientsOnline_t
 	unsigned int c_targetSize;
 	unsigned int c_rxSize;
 	unsigned int c_txSize;
+	z_stream zStream;
 }ClientsOnline;
 
 volatile sig_atomic_t srv_incomingSignal;

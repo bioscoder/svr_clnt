@@ -16,13 +16,29 @@
 
 #include "client.h"
 
+static void show_help()
+{
+
+	printf("Avalible parameters:");
+	printf("    [-H  server IP adress\n");
+	printf("    [-I  Input file for manupulations\n");
+	printf("    [-T  Compression/decomression method\n");
+	printf("    [       0 - no compression\n");
+	printf("    [       1 - Zlib deflate\n");
+	printf("    [       2 - Zlib inflate\n");
+	printf("    [-p  Client threading mode.\n");
+	printf("    [       0 - Single thread\n");
+	printf("    [       1 - Addintional Single thread for rx and tx\n");
+	printf("    [       1 - Addintional Separate threads for rx and tx\n");
+	printf("    Exapmle: ./hclient -H 127.0.0.1 -I test.bin -T 0\n");
+	printf("             ./hclient -H 127.0.0.1 -I test.bin -T 1\n");
+	printf("             ./hclient -H 127.0.0.1 -I test.bin.zdfl -T 2\n");
+}
 
 int main(int argc, char *argv[])
 {
 	int opt = 0;
-	unsigned int lSize = 0;
-	char * buffer[BUFFER_SIZE];
-	time_t start, end;
+	
 	int flags;
 	int sock;
 	struct sockaddr_in addr;
@@ -31,38 +47,40 @@ int main(int argc, char *argv[])
 
 	signal(SIGTERM, clnt_incomingSignal_parse);
 
-	conf.arch_type = 0;
-	conf.outFile = NULL;
-
-	while ((opt = getopt(argc, argv, "H:I:T:h?")) != -1) {
+	while ((opt = getopt(argc, argv, "H:I:T:p:h?")) != -1) {
 		switch (opt) {
 			case 'H':
 				conf.host = optarg;
 			break;
 			case 'I':
 				conf.input_filename = optarg;
-				conf.outFile = fopen(optarg, "rb");
-				if (conf.outFile == NULL)
+				FILE * iFile = fopen(conf.input_filename, "rb");
+				if (iFile == NULL)
 				{
-					printf("ERROR: Input file not found: %s\n", optarg);
-					exit(EXIT_FAILURE);
+					perror("Input file:");
+					exit(1);
 				}
-				fseek(conf.outFile , 0 , SEEK_END);
-				conf.input_fsize = lSize = ftell(conf.outFile);
-				rewind (conf.outFile);
+				fseek(iFile , 0 , SEEK_END);
+				conf.input_fsize = ftell(iFile);
+				rewind(iFile);
+				fclose(iFile);
 				break;
 			case 'T':
 				conf.arch_type = (unsigned char)atoi(optarg);
 				if (conf.arch_type >= unsuppportedCompression)
-					conf.arch_type =noCompression;
+					conf.arch_type = noCompression;
+				break;
+			case 'p':
+				conf.client_model = (unsigned char)atoi(optarg);
+				if ((conf.client_model < 0) && (conf.client_model > 2))
+					conf.client_model = 0;
 				break;
 			case 'h':
-			case '?':
-				/*todo*/
-				exit(EXIT_SUCCESS);
-				break;
+			case '?':conf.client_model = (unsigned char)atoi(optarg);
 			default:
-				exit(EXIT_FAILURE);
+				show_help();
+				exit(0);
+			break;
 			
 		}
 	}
@@ -70,7 +88,7 @@ int main(int argc, char *argv[])
 	sock = socket(AF_INET, SOCK_STREAM, 0);
 	if(sock < 0)
 	{
-		perror("socket");
+		perror("Socket failed:");
 		exit(1);
 	}
 
@@ -83,83 +101,65 @@ int main(int argc, char *argv[])
 
 	if(connect(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0)
 	{
-		perror("connect");
+		perror("Connect failed:");
 		exit(2);
 	}
- 
-	printf("Connected to %s:%d\n", inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
 
-	//let's go with magic packet
-	MagicToken *mToken = (MagicToken*)malloc(sizeof(MagicToken));
-	memset(mToken, 0,sizeof(MagicToken));
-	mToken->start_key = MAGIC_START_KEY;
-	mToken->compressionType = (tCompression)conf.arch_type;
-	mToken->nextdatasizes = lSize;
-	mToken->end_key = MAGIC_END_KEY;
-
-	Ack *ack = (Ack*)malloc(sizeof(Ack));
-	memset(ack, 0,sizeof(Ack));
-	ack->start_key = MAGIC_START_KEY;
-	ack->end_key = MAGIC_END_KEY;
-
-	for (;;)
+	if (bringUpServer(sock, conf.input_fsize) == 0)
 	{
-		if (clnt_incomingSignal)
+		printf("Connected to %s:%d\n", inet_ntoa(addr.sin_addr), ntohs(addr.sin_port));
+		
+ 		flags = fcntl(sock,F_GETFL,0);
+ 		if (flags > 0)
 		{
-			printf("main_client: catch signal %d. Should exit from thread\n",clnt_incomingSignal);
-			break;
+			if (fcntl(sock, F_SETFL, flags | O_NONBLOCK) != 0)
+				perror("NONBLOCK: ");
 		}
-
-		send(sock, mToken, sizeof(MagicToken), 0);
-		sleep(1);
-		if ((flags = recv(sock, buffer, BUFFER_SIZE, 0)) <= 0)
-		{
-			if (flags == 0)
-				continue;
-			else 
-			{
-				perror("recv_client recv");
-				printf("recv_client recv: errno %d\n", errno);
-				continue;
-			}
-		}
-		else
-		{
-			if (memcmp(ack, buffer, sizeof(Ack)) != 0)
-				continue;
-			else
-				break;
-		}
-	}
-	free(ack);
-	free(mToken);
-	if (flags > 0)
-	{
-		 flags = fcntl(sock,F_GETFL,0);
-		if (flags > 0)
-		{
-			if (fcntl(sock, F_SETFL, flags | O_NONBLOCK) == 0)
-				printf("cliens socket is now unblocked\n"); 
-			else perror("NONBLOCK: ");
-		} 
-		time(&start);
-		pthread_t recv_client_thread;
+		
 		ClientThreadsParametes *cp = (ClientThreadsParametes*)malloc(sizeof(ClientThreadsParametes));
-		cp->c_wr_pipe = 0;
-		cp->c_rd_pipe = 0 ;
-		cp->c_compressionType = (tCompression)conf.arch_type;
+		cp->c_compressionType = conf.arch_type;
 		cp->c_fsize = conf.input_fsize;
 		cp->c_filename = conf.input_filename;
 		cp->c_socket = sock;
-		cp->c_flink = conf.outFile;
+		cp->c_model = conf.client_model;
 
-		pthread_create(&recv_client_thread, NULL, client_thread, (void*)cp);
-		
-		pthread_join(recv_client_thread, NULL);
+		gds = (DataStat*)malloc(sizeof(DataStat));
+		time_t start, end;
+
+		if (conf.client_model == 0)
+		{
+			time(&start);
+			gds = RxTxThread((void *)cp);
+			time(&end);
+		}
+		if (conf.client_model == 1)
+		{
+			pthread_t client_thread;
+			
+			time(&start);
+			pthread_create(&client_thread, NULL, (void *)RxTxThread, (void*)cp);
+			pthread_join(client_thread, (void **)&gds);
+			time(&end);
+		}
+		if (conf.client_model == 2)
+		{
+			pthread_t rx_client_thread;
+			pthread_t tx_client_thread;
+
+			time(&start);
+			pthread_create(&tx_client_thread, NULL, (void *)txThread, (void*)cp);
+			pthread_create(&rx_client_thread, NULL, (void *)rxThread, (void*)cp);
+
+			pthread_join(rx_client_thread, (void **)&gds);
+			pthread_join(tx_client_thread, (void **)&gds);
+			
+			time(&end);		
+		}
+
+		OUT_STAT(start, end, gds->tx_bytes, gds->rx_bytes)
+
+		free(gds);
 		free(cp);
-		
-		time(&end);
-		printf("\n Transfer done in %f sec.!\n",difftime(end, start));
 	}
 	close(sock);
 	return 0;
