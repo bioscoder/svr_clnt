@@ -296,6 +296,12 @@ DataStat *RxTxThread(void *params)
 		case zlibInflate:
 			extension = ".zinfl";
 		break;
+		case lzmaCompress:
+			extension = ".lzcom";
+		break;
+		case lzmaDeCompress:
+			extension = ".lzdec";
+		break;
 		case noCompression:
 			extension = ".echo";
 		break;
@@ -340,7 +346,7 @@ DataStat *RxTxThread(void *params)
 			break;
 		}
 		
-		if ((poll_retval = poll(pollRxTx,2, 10000)) > 0)
+		if ((poll_retval = poll(pollRxTx,2, 0)) > 0)
 		{
 			if (pollRxTx[1].revents & POLLOUT)
 			{
@@ -421,7 +427,7 @@ DataStat *RxTxThread(void *params)
 			}
 		}
 		else 
-		if (poll_retval <= 0)
+		if (poll_retval < 0)
 		{
 			perror("RxTxThread poll");
 			break;

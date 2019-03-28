@@ -4,7 +4,8 @@
 #define MAX_ONLINE_CLIENTS	10
 #define ZLIB_DEFLATE_LEVEL	6
 
-#include "zlib/zlib.h"
+#include <zlib.h>
+#include <lzma.h>
 
 typedef struct ClientsOnline_t
 {
@@ -17,6 +18,7 @@ typedef struct ClientsOnline_t
 	unsigned int c_rxSize;
 	unsigned int c_txSize;
 	z_stream zStream;
+	lzma_stream lzStream;
 }ClientsOnline;
 
 volatile sig_atomic_t srv_incomingSignal;

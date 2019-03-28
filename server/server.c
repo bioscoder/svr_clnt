@@ -15,7 +15,8 @@
 #include <signal.h>
 
 #include "../protocol/protocol.h"
-#include "zlib/zlib.h"
+#include <zlib.h>
+#include <lzma.h>
 #include "server.h"
 
 void srv_incomingSignal_parse(int signum)
@@ -26,8 +27,8 @@ void srv_incomingSignal_parse(int signum)
 unsigned int processAndSend(int sock, char *data, unsigned int dataLen, void *params)
 {
 	unsigned int retval = 0;
-	int ret = 0;
-
+	int zret = 0;
+	lzma_ret lret = LZMA_OK;
 
 	if (dataLen == sizeof(MagicToken))
 	{
@@ -53,84 +54,150 @@ unsigned int processAndSend(int sock, char *data, unsigned int dataLen, void *pa
 					client->c_txSize += retval;
 				break;
 				case zlibDeflate:
+					zret = Z_OK;
 					if (!client->c_txSize)
+						zret = deflateInit(&client->zStream, ZLIB_DEFLATE_LEVEL);
+					if (zret != Z_OK)
 					{
-						if (deflateInit(&client->zStream, ZLIB_DEFLATE_LEVEL) != Z_OK)
-						{
-							printf("deflate init failed\n");
-							//TODO: correct stop
-							break;
-						}
+						printf("worker: zlib deflate initialization error: %d\n", zret);
+						break;
 					}
 					client->zStream.next_in = data;
 					client->zStream.avail_in = dataLen;
-					unsigned char *out = (unsigned char*)malloc(dataLen);
+					unsigned char *z_out = (unsigned char*)malloc(dataLen);
+					memset(z_out, 0,sizeof(z_out));
 					do
 					{
-						client->zStream.next_out = out;
+						client->zStream.next_out = z_out;
 						client->zStream.avail_out = dataLen;
-						if (deflate(&client->zStream, (client->c_rxSize >= client->c_targetSize)? Z_FINISH : Z_NO_FLUSH) == Z_STREAM_ERROR)
-								printf("worker: zlib deflate error %d\n",client->c_txSize);
-						else
+						zret = deflate(&client->zStream, (client->c_rxSize >= client->c_targetSize)? Z_FINISH : Z_NO_FLUSH);
+						if (( zret != Z_OK) && (zret != Z_STREAM_END))
 						{
-							retval =send(sock, out, dataLen - client->zStream.avail_out, MSG_NOSIGNAL);
+							printf("worker: zlib deflate error: %d\n",zret);
+							break;
+						}
+						//if ((client->zStream.avail_out != dataLen)) 
+						{
+							retval =send(sock, z_out, dataLen - client->zStream.avail_out, MSG_NOSIGNAL);
 							client->c_txSize += retval;
 						}
 					}
 					while(client->zStream.avail_out == 0);
-					free(out);
-					if (client->c_rxSize >= client->c_targetSize)
-					{
+					free(z_out);
+					if ((client->c_rxSize >= client->c_targetSize) || zret)
 						(void)deflateEnd(&client->zStream);
-						printf("worker: zlib def inflateEnd\n");
-					}
 				break;
 				case zlibInflate:
+					zret = Z_OK;
 					if (!client->c_txSize)
+						zret = inflateInit(&client->zStream);
+					if (zret != Z_OK)
 					{
-						if (inflateInit(&client->zStream) != Z_OK)
-						{
-							printf("inflate init failed\n");
-							//TODO: correct stop
-							break;
-						}
+						printf("worker: zlib inflate initialization error: %d\n", zret);
+						break;
 					}
 					client->zStream.next_in = data;
 					client->zStream.avail_in = dataLen;
-					unsigned char *in = (unsigned char*)malloc(dataLen);
+					unsigned char *z_in = (unsigned char*)malloc(dataLen);
+					memset(z_in, 0,sizeof(z_in));
 					do
 					{
-						client->zStream.next_out = in;
+						client->zStream.next_out = z_in;
 						client->zStream.avail_out = dataLen;
-						ret = inflate(&client->zStream,Z_NO_FLUSH);
-
-						switch (ret)
+						zret = inflate(&client->zStream,Z_NO_FLUSH);
+						if (( zret != Z_OK) && (zret != Z_STREAM_END))
 						{
-							case Z_NEED_DICT:
-								printf("worker: zlib inflate Z_NEED_DICT\n");
-								break;
-							case Z_DATA_ERROR:
-								printf("worker: zlib inflate Z_DATA_ERROR\n");
-								break;
-							case Z_MEM_ERROR:
-								printf("worker: zlib inflate Z_MEM_ERROR\n");
-								break;
-							
+							printf("worker: zlib inflate error: %d\n",zret);
+							break;
 						}
-						if (ret != Z_STREAM_ERROR)
-						{
-							retval =send(sock, in, dataLen - client->zStream.avail_out, MSG_NOSIGNAL);
-							client->c_txSize += retval;
-						}
-						if (ret == Z_STREAM_END)	
-						{
-							(void)inflateEnd(&client->zStream);
-						printf("worker: zlib inf inflateEnd\n");
-						}			
+						retval =send(sock, z_in, dataLen - client->zStream.avail_out, MSG_NOSIGNAL);
+						client->c_txSize += retval;
 					}
 					while(client->zStream.avail_out == 0);
-					free(in);
+					free(z_in);
+					if ((zret == Z_STREAM_END) || zret)
+							(void)inflateEnd(&client->zStream);
 					break;
+				case lzmaCompress:
+					lret = LZMA_OK;
+					if (!client->c_txSize)
+					{
+						client->lzStream = (lzma_stream)LZMA_STREAM_INIT;
+						lret = lzma_easy_encoder(&client->lzStream, 6 | LZMA_PRESET_EXTREME, LZMA_CHECK_CRC64);
+					}
+					if (lret != LZMA_OK) 
+					{
+						printf("worker: lzma compress initialization error: %d\n", lret);
+						break;
+					}
+					client->lzStream.next_in = data;
+					client->lzStream.avail_in = dataLen;
+					unsigned char *l_out = (unsigned char*)malloc(dataLen);
+					memset(l_out, 0,sizeof(l_out));
+					do
+					{
+						client->lzStream.next_out = l_out;
+						client->lzStream.avail_out = dataLen;
+						
+						lret = lzma_code(&client->lzStream, (client->c_rxSize >= client->c_targetSize) ? LZMA_FINISH : LZMA_RUN);
+
+						if ((lret != LZMA_OK) && (lret != LZMA_STREAM_END))
+						{
+							printf("worker: lzma compression error %d [%d]\n",lret,client->c_txSize);
+							break;
+						}
+						//if ((client->lzStream.avail_out != dataLen)) 
+						{
+							retval =send(sock, l_out, dataLen - client->lzStream.avail_out, MSG_NOSIGNAL);
+							client->c_txSize += retval;
+						}
+					}
+					while(client->lzStream.avail_out == 0);
+					
+					if ((client->c_rxSize >= client->c_targetSize) || lret)
+					{
+						lzma_end(&client->lzStream);
+						printf("worker: lzma compression lzma_end\n");
+					}
+					free(l_out);
+				break;
+				case lzmaDeCompress:
+					lret = LZMA_OK;
+					if (!client->c_txSize)
+					{
+						client->lzStream = (lzma_stream)LZMA_STREAM_INIT;
+						lret = lzma_stream_decoder(&client->lzStream, UINT64_MAX, LZMA_CONCATENATED);
+					}
+					if (lret != LZMA_OK) 
+						break;
+
+					client->lzStream.next_in = data;
+					client->lzStream.avail_in = dataLen;
+					unsigned char *l_in = (unsigned char*)malloc(dataLen);
+					memset(l_in, 0,sizeof(l_in));
+					do
+					{
+						client->lzStream.next_out = l_in;
+						client->lzStream.avail_out = dataLen;
+						
+						lret = lzma_code(&client->lzStream, (client->c_rxSize >= client->c_targetSize) ? LZMA_FINISH : LZMA_RUN);
+
+						if ((lret != LZMA_OK) && (lret != LZMA_STREAM_END))
+						{
+							printf("worker: lzma decompression error %d [%d]\n",lret,client->c_txSize);
+							break;//!!!
+						}
+						//if ((client->lzStream.avail_out != dataLen)) 
+						{
+							retval =send(sock, l_in, dataLen - client->lzStream.avail_out, MSG_NOSIGNAL);
+							client->c_txSize += retval;
+						}
+					}
+					while(client->lzStream.avail_out == 0);
+					free(l_in);
+					if ((client->c_rxSize >= client->c_targetSize) || lret)
+						lzma_end(&client->lzStream);
+				break;
 				default:
 					printf("worker: parameter %d\n",client->c_compressionType);
 					retval = 0;

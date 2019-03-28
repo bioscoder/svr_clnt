@@ -115,11 +115,9 @@ int main()
 							cOnline[cIdx].c_socket = new_socket;
 							cOnline[cIdx].inUse = 0;
 							cOnline[cIdx].c_addr = &clientaddr;
-
 							inet_ntop(clientaddr.ss_family,&(((struct sockaddr_in*)((struct sockaddr*)&clientaddr))->sin_addr),remoteIP, INET_ADDRSTRLEN );
 							
 							memcpy(&cOnline[cIdx].c_ip,&remoteIP,INET_ADDRSTRLEN);
-
 							i = 1;
 							setsockopt(cOnline[cIdx].c_socket, SOL_SOCKET, SO_REUSEADDR, &i, sizeof(int));
 							
@@ -141,7 +139,6 @@ int main()
 							printf("selectserver: ret socket %d", current_socket);
 						else
 							perror("recv@current_socket:");
-
 						close(current_socket);
 						FD_CLR(current_socket, &main_set_fd);
 					}
@@ -159,11 +156,8 @@ int main()
 								cOnline[i].c_compressionType = getCompressionFromHeader(incoming_data);
 								printf("client %d[%d]: target: %d, compr:%d\n",
 										i, cOnline[i].c_socket, cOnline[i].c_targetSize, cOnline[i].c_compressionType);
-
 						}
-
 						processAndSend(current_socket, incoming_data, retv_recv, &cOnline[i]);
-
 						if (cOnline[i].c_rxSize == cOnline[i].c_targetSize)
 						{
 							showCstat(&cOnline[i]);

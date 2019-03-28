@@ -26,10 +26,12 @@ static void show_help()
 	printf("    [       0 - no compression\n");
 	printf("    [       1 - Zlib deflate\n");
 	printf("    [       2 - Zlib inflate\n");
+	printf("    [       3 - lzma comress\n");
+	printf("    [       4 - lzma decomress\n");
 	printf("    [-p  Client threading mode.\n");
 	printf("    [       0 - Single thread\n");
 	printf("    [       1 - Addintional Single thread for rx and tx\n");
-	printf("    [       1 - Addintional Separate threads for rx and tx\n");
+	printf("    [       2 - Addintional Separate threads for rx and tx\n");
 	printf("    Exapmle: ./hclient -H 127.0.0.1 -I test.bin -T 0\n");
 	printf("             ./hclient -H 127.0.0.1 -I test.bin -T 1\n");
 	printf("             ./hclient -H 127.0.0.1 -I test.bin.zdfl -T 2\n");
