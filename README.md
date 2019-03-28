@@ -22,4 +22,3 @@ Clien avalible parameters:
 	           ./hclient -H 127.0.0.1 -I test.bin.zdfl -T 2 -p 1
 		   		   
 Server has no parameters.
-
