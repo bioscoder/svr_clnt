@@ -11,7 +11,7 @@ Clien avalible parameters:
 	         0 - no compression
 	         1 - Zlib deflate
 	         2 - Zlib inflate
-			 3 - lzma compress
+		 3 - lzma compress
 	         4 - lzma decompress
 	  -p  Client threading mode
 	         0 - Single thread
