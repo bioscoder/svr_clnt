@@ -28,6 +28,8 @@ static void show_help()
 	printf("    [       2 - Zlib inflate\n");
 	printf("    [       3 - lzma comress\n");
 	printf("    [       4 - lzma decomress\n");
+	printf("    [       5 - gzip comress\n");
+	printf("    [       6 - gzip decomress\n");
 	printf("    [-p  Client threading mode.\n");
 	printf("    [       0 - Single thread\n");
 	printf("    [       1 - Addintional Single thread for rx and tx\n");

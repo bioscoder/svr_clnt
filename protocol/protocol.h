@@ -18,6 +18,8 @@ typedef enum possibleCompressions
 	zlibInflate,
 	lzmaCompress,
 	lzmaDeCompress,
+	gzCompress,
+	gzDeCompress,
 	unsuppportedCompression
 } tCompression;
 

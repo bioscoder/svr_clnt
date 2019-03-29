@@ -200,6 +200,18 @@ DataStat *rxThread(void *params)
 		case zlibInflate:
 			extension = ".zinfl";
 		break;
+		case lzmaCompress:
+			extension = ".lzcom";
+		break;
+		case lzmaDeCompress:
+			extension = ".lzdec";
+		break;
+		case gzCompress:
+			extension = ".gz";
+		break;
+		case gzDeCompress:
+			extension = ".ugz";
+		break;
 		case noCompression:
 			extension = ".echo";
 		break;
@@ -301,6 +313,12 @@ DataStat *RxTxThread(void *params)
 		break;
 		case lzmaDeCompress:
 			extension = ".lzdec";
+		break;
+		case gzCompress:
+			extension = ".gz";
+		break;
+		case gzDeCompress:
+			extension = ".ugz";
 		break;
 		case noCompression:
 			extension = ".echo";

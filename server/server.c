@@ -198,6 +198,14 @@ unsigned int processAndSend(int sock, char *data, unsigned int dataLen, void *pa
 					if ((client->c_rxSize >= client->c_targetSize) || lret)
 						lzma_end(&client->lzStream);
 				break;
+				case gzCompress:
+					retval =send(sock, data, dataLen, MSG_NOSIGNAL);
+					client->c_txSize += retval;
+				break;
+				case gzDeCompress:
+					retval =send(sock, data, dataLen, MSG_NOSIGNAL);
+					client->c_txSize += retval;
+				break;
 				default:
 					printf("worker: parameter %d\n",client->c_compressionType);
 					retval = 0;
