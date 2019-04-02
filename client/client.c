@@ -14,8 +14,21 @@
 #include <arpa/inet.h>
 #include <signal.h>
 #include "../protocol/protocol.h"
-
 #include "client.h"
+
+const char *Extension[] =
+{
+	".echo",
+	".rdfl",
+	".rinfl",
+	".zdfl",
+	".zinfl",
+	".lzcom",
+	".lzdec",
+	".gz",
+	".ugz",
+	".err"
+};
 
 void clnt_incomingSignal_parse(int signum)
 {
@@ -24,17 +37,21 @@ void clnt_incomingSignal_parse(int signum)
 
 int bringUpServer(int socket, unsigned int dataSize)
 {
-	char * buffer[BUFFER_SIZE];
+	char * buffer[MAX_BUFFER_SIZE];
 	int retv = 0, err_cnt = -1;
-	
+
 	MagicToken *mToken = (MagicToken*)malloc(sizeof(MagicToken));
 	Ack *ack = (Ack*)malloc(sizeof(Ack));
 	if ((!mToken)|| (!ack))
 		return 1;
 	memset(mToken, 0,sizeof(MagicToken));
 	mToken->start_key = MAGIC_START_KEY;
-	mToken->compressionType = conf.arch_type;
+	mToken->compressionType = conf.compressionType;
+	mToken->compressionLevel = conf.compressionLevel;
+	mToken->chunk_size = conf.chunk_size;
 	mToken->nextdatasizes = dataSize;
+
+	mToken->end_key = MAGIC_END_KEY;
 	mToken->end_key = MAGIC_END_KEY;
 
 	memset(ack, 0,sizeof(Ack));
@@ -48,18 +65,18 @@ int bringUpServer(int socket, unsigned int dataSize)
 			printf("main_client: catch signal %d. Should exit from thread\n",clnt_incomingSignal);
 			break;
 		}
-		
-		if (err_cnt++ > 100) 
+
+		if (err_cnt++ > 100)
 			break;
-		
+
 		if (send(socket, mToken, sizeof(MagicToken), 0) != sizeof(MagicToken))
 			continue;
 
-		if ((retv = recv(socket, buffer, BUFFER_SIZE, 0)) <= 0)
+		if ((retv = recv(socket, buffer, MAX_BUFFER_SIZE, 0)) <= 0)
 		{
 			if (retv == 0)
 				continue;
-			else 
+			else
 			{
 				perror("client recv:");
 				break;
@@ -75,10 +92,10 @@ int bringUpServer(int socket, unsigned int dataSize)
 	}
 	if (mToken) free(mToken);
 	if (ack) free(ack);
-	
+
 	if (retv == sizeof(Ack))
 		return 0;
-	
+
 	return retv;
 }
 
@@ -86,14 +103,14 @@ DataStat *txThread(void *params)
 {
 	ClientThreadsParametes *cp = (ClientThreadsParametes*) params;
 	unsigned int tx_data = 0;
-	unsigned int idx=0, t=0;
-	char send_buffer[BUFFER_SIZE] = {0};
-	int send_retv, poll_retval;
+	unsigned int idx = 0, t = 0, c_chunk = MAX_BUFFER_SIZE;
+
+	int send_retv, select_retv;
 	unsigned int tx_size = 0;
 	struct pollfd transmitter[1];
 	int attempts = 0;
 	int pSocket = cp->c_socket;
-	
+
 	FILE *inFile = fopen(cp->c_filename, "rb");
 	unsigned int inFileSize = cp->c_fsize;
 
@@ -106,6 +123,16 @@ DataStat *txThread(void *params)
 	inFileSize = ftell(inFile);
 	rewind(inFile);
 
+	if (cp->c_chunk)
+		c_chunk = cp->c_chunk;
+	char *send_buffer = (unsigned char*)malloc(c_chunk);
+	if (!send_buffer)
+	{
+		perror("TxThread buffer allocation");
+		pthread_exit(NULL);
+	}
+	struct timeval timeout = {10,0};
+	unsigned char timeouts = 4;
 	//TODO: signal handling
 	while(!clnt_incomingSignal)
 	{
@@ -119,15 +146,15 @@ DataStat *txThread(void *params)
 		FD_SET (pSocket, &set_sockets_write);
 		if (tx_data<inFileSize)
 		{
-			if ((inFileSize - tx_data) < BUFFER_SIZE)
+			if ((inFileSize - tx_data) < c_chunk)
 				(idx = inFileSize - tx_data);
-			else 
-				(idx = BUFFER_SIZE);
+			else
+				(idx = c_chunk);
 			if ((t = fread(send_buffer, 1, idx,inFile)) != idx)
 			{
 				if (t == 0)
 					continue;
-				else 
+				else
 				if (t > 0)
 					idx = t;
 				else
@@ -140,8 +167,10 @@ DataStat *txThread(void *params)
 		else
 		{
 			FD_CLR(pSocket, &set_sockets_write);
-		}	
-		if (select (pSocket + 1, NULL, &set_sockets_write, NULL, NULL)>=0)
+		}
+		timeouts--;
+		select_retv = select (pSocket + 1, NULL, &set_sockets_write, NULL, &timeout);
+		if (select_retv > 0)
 		{
 			if(FD_ISSET(pSocket, &set_sockets_write))
 			{
@@ -149,11 +178,12 @@ DataStat *txThread(void *params)
 					do
 					{
 						send_retv = send(pSocket, send_buffer, idx, 0);
-						
-						if (send_retv <= 0) 
+
+						if (send_retv <= 0)
 						{
+							perror("txThread send");
 							if (attempts++ < 100 )
-							{	
+							{
 								if ((errno == EAGAIN))
 									attempts = 0;
 								else
@@ -167,15 +197,26 @@ DataStat *txThread(void *params)
 						break;
 			}
 		}
-		else 
+		if (select_retv < 0)
 		{
-			perror("txThread poll");
+			perror("txThread select");
 			break;
 		}
-	}
-
+		if (select_retv = 0)
+		{
+			if (timeouts > 0)
+				continue;
+			else
+			{
+				printf("server timeout. Stop activity\n");
+				break;
+			}
+		}
+	}//while(!clnt_incomingSignal)
+	if (send_buffer)
+		free(send_buffer);
 	if(inFile) fclose(inFile);
-	
+
 	gds->tx_bytes = tx_data;
 	pthread_exit(gds);
 }
@@ -184,48 +225,29 @@ DataStat *rxThread(void *params)
 {
 	ClientThreadsParametes *cp = (ClientThreadsParametes*) params;
 	unsigned int out_data = 0;
-	unsigned int idx=0;
-	const char *extension;
-	char recv_buffer[BUFFER_SIZE] = {0};
-	int recv_retval, poll_retval;
+	unsigned int idx=0, c_chunk = MAX_BUFFER_SIZE;
+
+	int recv_retval, select_retval;
 	unsigned int rx_size = 0;
 	struct pollfd reciever[1];
 	int pSocket = cp->c_socket;
-	
-	switch(cp->c_compressionType)
-	{
-		case zlibDeflate:
-			extension = ".zdfl";
-		break;
-		case zlibInflate:
-			extension = ".zinfl";
-		break;
-		case lzmaCompress:
-			extension = ".lzcom";
-		break;
-		case lzmaDeCompress:
-			extension = ".lzdec";
-		break;
-		case gzCompress:
-			extension = ".gz";
-		break;
-		case gzDeCompress:
-			extension = ".ugz";
-		break;
-		case noCompression:
-			extension = ".echo";
-		break;
-	}
 
-	FILE *outFile = fopen(strcat((char*)cp->c_filename, extension), "wb");
+	if (cp->c_chunk)
+		c_chunk = cp->c_chunk;
+	char *recv_buffer = (unsigned char*)malloc(c_chunk);
+	if (!recv_buffer)
+	{
+		perror("rxThread buffer allocation");
+		pthread_exit(NULL);
+	}
+	FILE *outFile = fopen(strcat((char*)cp->c_filename, Extension[cp->c_compressionType]), "wb");
 	if (outFile == NULL)
 	{
 		perror("rxThread:");
 		pthread_exit(NULL);
 	}
-	struct timeval timeout;
-	timeout.tv_sec = 10;
-	timeout.tv_usec = 0;
+	struct timeval timeout = {60,0};
+	unsigned char timeouts = 4;
 	//TODO: signal handling
 	while(!clnt_incomingSignal)
 	{
@@ -237,15 +259,16 @@ DataStat *rxThread(void *params)
 		fd_set set_sockets_read;
 		FD_ZERO(&set_sockets_read);
 		FD_SET (pSocket, &set_sockets_read);
-		if (select (pSocket + 1, &set_sockets_read, NULL, NULL, NULL)>=0)
+		select_retval = select (pSocket + 1, &set_sockets_read, NULL, NULL, &timeout);
+		if (select_retval > 0)
 		{
 			if(FD_ISSET(pSocket, &set_sockets_read))
 			{
-				if ((recv_retval = recv(pSocket, recv_buffer, BUFFER_SIZE, 0)) <= 0)
+				if ((recv_retval = recv(pSocket, recv_buffer, c_chunk, 0)) <= 0)
 				{
 					if (recv_retval == 0)
 						continue;
-					else 
+					else
 					{
 						perror("rxThread");
 						break;
@@ -257,6 +280,17 @@ DataStat *rxThread(void *params)
 					{
 						if (isHeaderValid(recv_buffer, recv_retval))
 						{
+							MagicToken *mToken = (MagicToken*)malloc(sizeof(MagicToken));
+							if (mToken == NULL)
+							{
+								printf("malloc mToken\n");
+								return 0;
+							}
+							if (memmove(mToken, recv_buffer, (sizeof(MagicToken))))
+							{
+								gds->error = mToken->err_code;
+								free(mToken);
+							}
 							FD_CLR(pSocket, &set_sockets_read);
 							break;
 						}
@@ -266,12 +300,24 @@ DataStat *rxThread(void *params)
 				}
 			}
 		}
-		else 
+		if (select_retval < 0)
 		{
-			perror("rxThread poll");
+			perror("rxThread select");
 			break;
 		}
-	}
+		if (select_retval = 0)
+		{
+			if (timeouts--)
+				continue;
+			else
+			{
+				printf("server timeout. Stop activity\n");
+				break;
+			}
+		}
+	}//while(!clnt_incomingSignal)
+	if (recv_buffer)
+		free(recv_buffer);
 	if(outFile) fclose(outFile);
 
 	gds->rx_bytes = rx_size;
@@ -282,58 +328,39 @@ DataStat *RxTxThread(void *params)
 {
 	ClientThreadsParametes *cp = (ClientThreadsParametes*) params;
 	unsigned int tx_data = 0;
-	unsigned int idx=0, t=0;
-	char send_buffer[BUFFER_SIZE] = {0};
+	unsigned int idx=0, t=0, c_chunk = MAX_BUFFER_SIZE;
 	int send_retv, poll_retval;
 	unsigned int tx_size = 0;
 	struct pollfd pollRxTx[2];
 	int attempts = 0;
-	
+
 	unsigned int out_data = 0;
-	const char *extension;
-	char recv_buffer[BUFFER_SIZE] = {0};
 	int recv_retval;
 	unsigned int rx_size = 0;
 	struct pollfd reciever[1];
 	int pSocket = cp->c_socket;
 
 	char* outFilename = (char*)cp->c_filename;
-	char* inFilename = (char*)cp->c_filename;	 	
+	char* inFilename = (char*)cp->c_filename;
 
-	switch(cp->c_compressionType)
+	if (cp->c_chunk)
+		c_chunk = cp->c_chunk;
+	char *send_buffer = (unsigned char*)malloc(c_chunk);
+	char *recv_buffer = (unsigned char*)malloc(c_chunk);
+	if ((!recv_buffer) || (!send_buffer))
 	{
-		case zlibDeflate:
-			extension = ".zdfl";
-		break;
-		case zlibInflate:
-			extension = ".zinfl";
-		break;
-		case lzmaCompress:
-			extension = ".lzcom";
-		break;
-		case lzmaDeCompress:
-			extension = ".lzdec";
-		break;
-		case gzCompress:
-			extension = ".gz";
-		break;
-		case gzDeCompress:
-			extension = ".ugz";
-		break;
-		case noCompression:
-			extension = ".echo";
-		break;
+		perror("RxTxThread buffer allocation");
+		pthread_exit(NULL);
 	}
 
 	FILE *inFile = fopen(inFilename, "rb");
-
 	if (inFile == NULL)
 	{
 		perror("RxTxThread input file");
 		pthread_exit(NULL);
 	}
 
-	FILE *outFile = fopen(strcat(outFilename, extension), "wb");
+	FILE *outFile = fopen(strcat(outFilename,  Extension[cp->c_compressionType]), "wb");
 	if (outFile == NULL)
 	{
 		perror("RxTxThread ounput file");
@@ -352,9 +379,7 @@ DataStat *RxTxThread(void *params)
 	pollRxTx[1].events = POLLOUT;
 	pollRxTx[1].revents = 0;
 
-	struct timeval timeout;
-	timeout.tv_sec = 10;
-	timeout.tv_usec = 0;
+	unsigned char timeouts = 4;
 	//TODO: signal handling
 	while(!clnt_incomingSignal)
 	{
@@ -363,18 +388,18 @@ DataStat *RxTxThread(void *params)
 			printf("RxTxThread: catch signal %d. Should exit from thread\n",clnt_incomingSignal);
 			break;
 		}
-		
-		if ((poll_retval = poll(pollRxTx,2, 0)) > 0)
+
+		if ((poll_retval = poll(pollRxTx,2, 60*1000)) > 0) //60 seconds timeout
 		{
 			if (pollRxTx[1].revents & POLLOUT)
 			{
 				pollRxTx[1].revents &= ~POLLOUT;
 				if (tx_data<inFileSize)
 				{
-					if ((inFileSize - tx_data) < BUFFER_SIZE)
+					if ((inFileSize - tx_data) < c_chunk)
 							(idx = inFileSize - tx_data);
-					else 
-						(idx = BUFFER_SIZE);
+					else
+						(idx = c_chunk);
 
 					if ((t = fread(send_buffer, 1, idx,inFile)) != idx)
 					{
@@ -395,11 +420,11 @@ DataStat *RxTxThread(void *params)
 					do
 					{
 						send_retv = send(pollRxTx[1].fd, send_buffer, idx, 0);
-						
-						if (send_retv <= 0) 
+
+						if (send_retv <= 0)
 						{
 							if (attempts++ < 100 )
-							{	
+							{
 								if ((errno == EAGAIN))
 									attempts = 0;
 								else
@@ -414,16 +439,16 @@ DataStat *RxTxThread(void *params)
 				{
 					pollRxTx[1].events &= ~POLLOUT;
 				}
-				
+
 			}
 			if (pollRxTx[0].revents & POLLIN)
 			{
 				pollRxTx[0].revents &= ~POLLIN;
-				if ((recv_retval = recv(pollRxTx[0].fd, recv_buffer, BUFFER_SIZE, 0)) <= 0)
+				if ((recv_retval = recv(pollRxTx[0].fd, recv_buffer, c_chunk, 0)) <= 0)
 				{
 					if (recv_retval == 0)
 						continue;
-					else 
+					else
 					{
 						perror("RxTxThread");
 						break;
@@ -435,6 +460,17 @@ DataStat *RxTxThread(void *params)
 					{
 						if (isHeaderValid(recv_buffer, recv_retval))
 						{
+							MagicToken *mToken = (MagicToken*)malloc(sizeof(MagicToken));
+							if (mToken == NULL)
+							{
+								perror("malloc mToken");
+								return 0;
+							}
+							if (memmove(mToken, recv_buffer, (sizeof(MagicToken))))
+							{
+								gds->error = mToken->err_code;
+								free(mToken);
+							}
 							pollRxTx[0].events &= ~POLLIN;
 							break;
 						}
@@ -444,13 +480,28 @@ DataStat *RxTxThread(void *params)
 				}
 			}
 		}
-		else 
+		else
 		if (poll_retval < 0)
 		{
 			perror("RxTxThread poll");
 			break;
 		}
+		if (poll_retval == 0)
+		{
+			if (timeouts--)
+				continue;
+			else
+			{
+				printf("server timeout. Stop activity\n");
+				break;
+			}
+		}
 	}
+
+	if (recv_buffer)
+	 	free(recv_buffer);
+	if (send_buffer)
+		free(send_buffer);
 
 	if(outFile) fclose(outFile);
 	if(inFile) fclose(inFile);
@@ -463,4 +514,3 @@ DataStat *RxTxThread(void *params)
 	else
 		return gds;
 }
-
