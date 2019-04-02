@@ -8,7 +8,7 @@ BUILD_DIR = build
 S_DIR = server/
 S_SRC = $(wildcard $(S_DIR)*.c)
 S_OBJ = $(S_SRC:%.c=%.o)
-S_CFLAGS += -std=c++11 -g3 -w -O2
+S_CFLAGS += -std=c++11 -g3 -w -O2 -I./custom_zlib
 
 C_DIR = client/
 C_SRC = $(wildcard $(C_DIR)*.c)
@@ -30,7 +30,6 @@ server: $(P_OBJ) $(S_OBJ)
 
 client: $(P_OBJ) $(C_OBJ)
 	$(CC) $(C_CFLAGS) -o $(C_OUT) $(C_OBJ) $(P_OBJ)
-	
+
 clean:
 	$(RM) $(S_OBJ) $(C_OBJ) $(P_OBJ) $(C_OUT) $(S_OUT)
-

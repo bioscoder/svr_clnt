@@ -15,7 +15,7 @@ int isHeaderValid(char *input, unsigned int len)
 {
 	if (len != sizeof(MagicToken))
 		return 0;
-	
+
 	MagicToken *mToken = (MagicToken*)malloc(sizeof(MagicToken));
 	if (mToken == NULL)
 	{
@@ -32,36 +32,4 @@ int isHeaderValid(char *input, unsigned int len)
 	}
 	free(mToken);
 	return 0;
-}
-
-unsigned int getFilesizeFromHeader(char *input)
-{
-	unsigned int retval = 0;
-	
-	MagicToken *mToken = (MagicToken*)malloc(sizeof(MagicToken));
-	if (mToken == NULL)
-	{
-		printf("malloc mToken\n");
-		return 0;
-	}
-	if (memmove(mToken, input, (sizeof(MagicToken))))
-		retval = mToken->nextdatasizes;
-	free(mToken);
-	return retval;
-}
-
-unsigned int getCompressionFromHeader(char *input)
-{
-	unsigned int retval = 0;
-
-	MagicToken *mToken = (MagicToken*)malloc(sizeof(MagicToken));
-	if (mToken == NULL)
-	{
-		printf("malloc mToken\n");
-		return 0;
-	}
-	if (memmove(mToken, input, (sizeof(MagicToken))))
-		retval = mToken->compressionType;
-	free(mToken);
-	return retval;
 }

@@ -1,5 +1,5 @@
-#ifndef PROTOCOL_H
-#define PROTOCOL_H
+#ifndef _PROTOCOL_H_
+#define _PROTOCOL_H_
 
 #define TARGET_PORT 		3134
 #define CLIENTS_IFACE_ADDR	INADDR_ANY
@@ -8,12 +8,13 @@
 #define MAGIC_START_KEY	0xDEAD8086
 #define MAGIC_END_KEY	0x8086BEAF
 
-#define BUFFER_SIZE		1024
-#define Z_CHUNK		BUFFER_SIZE
+#define MAX_BUFFER_SIZE		32*1024
 
 typedef enum possibleCompressions
 {
-	noCompression,
+	noCompression = 0,
+	rawDeflate,
+	rawInflate,
 	zlibDeflate,
 	zlibInflate,
 	lzmaCompress,
@@ -23,20 +24,22 @@ typedef enum possibleCompressions
 	unsuppportedCompression
 } tCompression;
 
-typedef struct __attribute__((__packed__)) Ack_t {
+#pragma pack(push,1)
+typedef struct Ack_t {
 	int start_key;
 	int end_key;
 } Ack;
 
-typedef struct __attribute__((__packed__)) MagicToken_t {
+typedef struct MagicToken_t {
 	int start_key;
 	tCompression compressionType;
+	int compressionLevel;
+	unsigned int chunk_size;
 	unsigned int nextdatasizes;
 	unsigned char workModel;
+	int err_code;
 	int end_key;
 } MagicToken;
-
+#pragma pack(pop)
 int isHeaderValid(char *input, unsigned int len);
-unsigned int getFilesizeFromHeader(char *input);
-unsigned int getCompressionFromHeader(char *input);
 #endif //_PROTOCOL_H_
