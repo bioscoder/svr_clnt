@@ -3,10 +3,10 @@
 
 
 #define OUT_STAT(tStart, tEnd, tx, rx, err) \
-		printf("\033[7m");\
+		printf("\n\033[7m");\
 		printf("Time spent: %0.1f sec.\n", difftime(tEnd, tStart));\
 		printf("TX:%d RX:%d\n",tx,rx);\
-		if ((tx>=rx)) printf("Compression: %1.2f%%\n", (100 - (rx*100.0/tx)));\
+		if ((tx>rx)) printf("Compression: %1.2f%%\n", (100 - (rx*100.0/tx)));\
 		if (err) printf("ERROR: %d\n",err);\
 		printf("\033[0m\n");
 
@@ -28,6 +28,7 @@ typedef struct ClientThreadsParametes_t {
 	unsigned int c_chunk;
 	const char *c_filename;
 	unsigned char c_model;
+	void*	sharedStat;
 } ClientThreadsParametes;
 #pragma pack(pop)
 

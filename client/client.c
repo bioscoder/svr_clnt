@@ -119,8 +119,18 @@ DataStat *txThread(void *params)
 		perror("txThread fopen");
 		pthread_exit(NULL);
 	}
-	fseek(inFile , 0 , SEEK_END);
+	if (fseek(inFile , 0 , SEEK_END))
+	{
+		perror("txThread fseek");
+		pthread_exit(NULL);
+	}
+	if (ftell(inFile) > 0)
 	inFileSize = ftell(inFile);
+	else
+	{
+		perror("txThread ftell");
+		pthread_exit(NULL);
+	}
 	rewind(inFile);
 
 	if (cp->c_chunk)
@@ -153,7 +163,14 @@ DataStat *txThread(void *params)
 			if ((t = fread(send_buffer, 1, idx,inFile)) != idx)
 			{
 				if (t == 0)
+				{
+					if (attempts++ > 50)
+					{
+						printf("txThread: Can't read %d bytes from file.\n", idx);
+						break;
+					}
 					continue;
+				}
 				else
 				if (t > 0)
 					idx = t;
@@ -193,6 +210,8 @@ DataStat *txThread(void *params)
 					}
 					while (send_retv <= 0);
 					tx_data += send_retv;
+					if (cp->sharedStat)
+						memcpy(cp->sharedStat, &tx_data, sizeof(unsigned int));
 					if (tx_data>=inFileSize)
 						break;
 			}
@@ -228,7 +247,7 @@ DataStat *rxThread(void *params)
 	unsigned int idx=0, c_chunk = MAX_BUFFER_SIZE;
 
 	int recv_retval, select_retval;
-	unsigned int rx_size = 0;
+	unsigned int rx_size = 0, tx_size=0;
 	struct pollfd reciever[1];
 	int pSocket = cp->c_socket;
 
@@ -297,6 +316,12 @@ DataStat *rxThread(void *params)
 					}
 					fwrite(recv_buffer , 1, recv_retval, outFile );
 					rx_size+=recv_retval;
+					if (cp->sharedStat)
+					{
+						memcpy(&tx_size, cp->sharedStat, sizeof(unsigned int));
+						printf("\tTX: %d RX: %d\r",tx_size, rx_size);
+
+					}
 				}
 			}
 		}
@@ -479,6 +504,7 @@ DataStat *RxTxThread(void *params)
 					rx_size+=recv_retval;
 				}
 			}
+			printf("\tTX: %d RX: %d\r",tx_data, rx_size);
 		}
 		else
 		if (poll_retval < 0)

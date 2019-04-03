@@ -1,5 +1,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/mman.h>
+#include <sys/wait.h>
 #include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -138,6 +140,7 @@ int main(int argc, char *argv[])
 		cp->c_model = conf.client_model;
 
 		gds = (DataStat*)malloc(sizeof(DataStat));
+		memset(gds, 0, sizeof(DataStat));
 		time_t start, end;
 		time(&start);
 		if (conf.client_model == 0)
@@ -152,14 +155,20 @@ int main(int argc, char *argv[])
 
 		if (conf.client_model == 2)
 		{
+			void* sh_data = mmap(NULL, sizeof(unsigned int), PROT_READ | PROT_WRITE, MAP_ANONYMOUS | MAP_SHARED, 0, 0);
+			cp->sharedStat = sh_data;
 			pthread_t rx_client_thread;
 			pthread_t tx_client_thread;
 
 			pthread_create(&tx_client_thread, NULL, (void *)txThread, (void*)cp);
 			pthread_create(&rx_client_thread, NULL, (void *)rxThread, (void*)cp);
 
-			pthread_join(rx_client_thread, (void **)&gds);
 			pthread_join(tx_client_thread, (void **)&gds);
+			if (!gds->tx_bytes)
+				pthread_cancel(rx_client_thread);
+			else
+				pthread_join(rx_client_thread, (void **)&gds);
+			munmap(sh_data, sizeof(unsigned int));
 		}
 		time(&end);
 		OUT_STAT(start, end, gds->tx_bytes, gds->rx_bytes, gds->error)
